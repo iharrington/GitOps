@@ -1,0 +1,21 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: code-templates
+  title: Code Templates
+  description: Reusable code templates (gitignore, dockerignore, and more) for projects
+  annotations:
+    backstage.io/techdocs-ref: dir:.
+    gitlab.com/project-slug: devops/gitlab-ci/code-templates
+  tags:
+    - developer-experience
+    - templates
+    - standardization
+    - gitignore
+    - dockerignore
+spec:
+  type: library
+  lifecycle: production
+  owner: devops
+  domain: developer-experience
+  system: ci-cd-platform

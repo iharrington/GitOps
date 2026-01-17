@@ -1,0 +1,15 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: weaviate
+  namespace: weaviate
+spec:
+  releaseName: weaviate
+  interval: 5m
+  chartRef:
+    kind: OCIRepository
+    name: weaviate-ecr
+    namespace: flux-system
+  valuesFrom:
+    - kind: ConfigMap
+      name: weaviate-values

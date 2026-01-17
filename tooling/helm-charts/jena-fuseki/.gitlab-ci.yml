@@ -1,0 +1,49 @@
+stages:
+  - precheck
+  - build
+
+include:
+  - project: 'devops/gitlab-ci/pipeline-templates'
+    file: 'kaniko.yml'
+    ref: main
+  - project: 'devops/gitlab-ci/pipeline-templates'
+    file: 'helm.yml'
+    ref: main
+
+# -----------------------
+# Docker
+# -----------------------
+docker_precheck:
+  extends: .precheck
+  variables:
+    IMAGE_NAME: jena-fuseki
+    IMAGE_TAG: 1.0.1
+
+docker_build:
+  extends: .build-and-push
+  needs:
+    - job: docker_precheck
+      artifacts: true
+  variables:
+    IMAGE_NAME: jena-fuseki
+    IMAGE_TAG: 1.0.1
+
+# -----------------------
+# HELM
+# -----------------------
+helm_precheck:
+  extends: .precheck-helm
+  variables:
+    CHART_NAME: jena-fuseki
+    CHART_VERSION: 1.1.3
+    CHART_DIR_BASE: helm
+
+helm_build:
+  extends: .build-and-push-helm
+  needs:
+    - job: helm_precheck
+      artifacts: true
+  variables:
+    CHART_NAME: jena-fuseki
+    CHART_VERSION: 1.1.3
+    CHART_DIR_BASE: helm

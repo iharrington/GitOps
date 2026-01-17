@@ -1,0 +1,8 @@
+site_name: Code Templates
+repo_url: https://gitlab.com/devops/gitlab-ci/code-templates
+nav:
+  - Home: index.md
+  - Templates:
+      - GitIgnore: gitignore.md
+      - DockerIgnore: dockerignore.md
+      - HelmIgnore: helmignore.md

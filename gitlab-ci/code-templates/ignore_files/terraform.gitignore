@@ -1,0 +1,85 @@
+# -----------------------------------------------------------------------------
+# Terraform / Terragrunt
+# -----------------------------------------------------------------------------
+# Local Terragrunt cache
+.terragrunt-cache/
+
+# Local .terraform directories & lock files
+**/.terraform/*
+.terraform
+.terraform.lock.hcl
+
+# Terraform state
+*.tfstate
+*.tfstate.*
+
+# Terraform plans
+plan.*
+*.tfplan
+
+# -----------------------------------------------------------------------------
+# Makefile (custom project dirs)
+# -----------------------------------------------------------------------------
+.vmc-makefile
+.centralized-makefile
+
+# -----------------------------------------------------------------------------
+# Python (for tooling/tests)
+# -----------------------------------------------------------------------------
+Pipfile
+Pipfile.lock
+.test-plans
+*.pyc
+*.pyo
+__pycache__/
+.tox/
+*.egg-info/
+.eggs/
+.coverage
+.pytest_cache/
+
+# -----------------------------------------------------------------------------
+# Ansible
+# -----------------------------------------------------------------------------
+*.retry
+*.vault
+roles/*/.retry
+roles/*/.retry~
+*.facts
+.ansible/
+*.tar.gz
+*.zip
+
+# -----------------------------------------------------------------------------
+# System / Editors
+# -----------------------------------------------------------------------------
+# macOS
+.DS_Store
+._.DS_Store
+.librarian
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+*:Zone.Identifier
+
+# Linux / WSL oddities
+.trash/
+lost+found/
+*~
+*swp
+
+# IDEs / Editors
+.idea/
+.vscode/
+.history/
+.editorconfig
+
+# -----------------------------------------------------------------------------
+# Local Env / Direnv
+# -----------------------------------------------------------------------------
+!.envrc
+.direnv/

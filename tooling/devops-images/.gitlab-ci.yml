@@ -1,0 +1,30 @@
+stages:
+  - precheck
+  - build
+
+include:
+  - project: "devops/gitlab-ci/pipeline-templates"
+    file: "kaniko.yml"
+    ref: main
+
+# -----------------------
+# GOLDEN_RUNNER
+# -----------------------
+golden_runner_precheck:
+  extends: .precheck
+  variables:
+    IMAGE_NAME: golden_runner
+    IMAGE_TAG: 1.2.0
+    IMAGE_DIR_BASE: images/golden_runner
+    ECR_REPOSITORY_PREFIX: devops
+
+golden_runner_build:
+  extends: .build-and-push
+  needs:
+    - job: golden_runner_precheck
+      artifacts: true
+  variables:
+    IMAGE_NAME: golden_runner
+    IMAGE_TAG: 1.2.0
+    IMAGE_DIR_BASE: images/golden_runner
+    ECR_REPOSITORY_PREFIX: devops

@@ -1,0 +1,15 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: jena-fuseki
+  namespace: jena-fuseki
+spec:
+  releaseName: jena-fuseki
+  interval: 5m
+  chartRef:
+    kind: OCIRepository
+    name: jena-fuseki-ecr
+    namespace: flux-system
+  valuesFrom:
+    - kind: ConfigMap
+      name: jena-fuseki-values

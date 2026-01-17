@@ -1,0 +1,7 @@
+site_name: "Weaviate Documentation"
+repo_url: https://gitlab.com/platform/data/weaviate
+nav:
+  - Home: index.md
+  - Guides:
+      - Weaviate EKS User Guide: weaviate-eks-user-guide.md
+  - Architecture: architecture.md

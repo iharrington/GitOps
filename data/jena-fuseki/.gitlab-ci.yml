@@ -1,0 +1,89 @@
+stages:
+  - lint
+  - validate
+  - check-cluster
+
+default:
+  tags:
+    - platform
+
+include:
+  - project: "devops/gitlab-ci/pipeline-templates"
+    file: "eks_auth.yml"
+    ref: main
+
+variables:
+  AWS_REGION: "us-west-1"
+
+# ---------------------------------------------------------------------
+# Workflow rules: select environment variables based on branch / MR
+# ---------------------------------------------------------------------
+workflow:
+  rules:
+    - if: '$CI_COMMIT_BRANCH != "main" && $CI_OPEN_MERGE_REQUESTS == null'
+      variables:
+        CI_ENVIRONMENT_NAME: "dev"
+        EKS_CLUSTER_NAME: "isaac-eks-cluster"
+
+    # Uncomment when staging/prod clusters exist
+    # Staging: Merge Requests
+    # - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    #   variables:
+    #     CI_ENVIRONMENT_NAME: "staging"
+    #     EKS_CLUSTER_NAME: "uat-eks-cluster"
+
+    # Prod: Main branch
+    # - if: '$CI_COMMIT_BRANCH == "main"'
+    #   variables:
+    #     CI_ENVIRONMENT_NAME: "prod"
+    #     EKS_CLUSTER_NAME: "prod-eks-cluster"
+
+# ---------------------------------------------------------------------
+# Stage 1: Lint the manifests
+# ---------------------------------------------------------------------
+lint:
+  stage: lint
+  image: $ECR_ROOT/devops/golden_runner:1.1.1
+  script:
+    - echo "🔍 Installing Kustomize..."
+    - curl -sSL -o kustomize.tar.gz https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v5.2.0/kustomize_v5.2.0_linux_amd64.tar.gz
+    - tar -xzf kustomize.tar.gz
+    - chmod +x output/kustomize
+    - mv output/kustomize /usr/local/bin/kustomize
+    - echo "🔍 Installing Kubeconform..."
+    - curl -sSL -o kubeconform.tar.gz https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz
+    - tar -xzf kubeconform.tar.gz
+    - chmod +x kubeconform
+    - mv kubeconform /usr/local/bin/kubeconform
+    - echo "🔍 Rendering kustomize overlay for $CI_ENVIRONMENT_NAME..."
+    - kustomize build overlays/$CI_ENVIRONMENT_NAME > rendered.yaml
+    - echo "🔎 Validating rendered manifests..."
+    - kubeconform -summary -ignore-missing-schemas rendered.yaml
+
+# ---------------------------------------------------------------------
+# Stage 2: Validate Helm chart availability in ECR
+# ---------------------------------------------------------------------
+chart-check:
+  stage: validate
+  image: $ECR_ROOT/devops/golden_runner:1.1.1
+  script:
+    - echo "🔍 Extracting chart info from base/ocirepository.yaml..."
+    - CHART_URL=$(yq e '.spec.url' base/ocirepository.yaml)
+    - CHART_VERSION=$(yq e '.spec.ref.tag' base/ocirepository.yaml)
+    - echo "🔍 Checking Helm chart version $CHART_VERSION availability in ECR..."
+    - helm show chart "$CHART_URL" --version "$CHART_VERSION"
+
+# ---------------------------------------------------------------------
+# Stage 3: Cluster checks (Flux-managed resources)
+# ---------------------------------------------------------------------
+cluster-check:
+  stage: check-cluster
+  extends: .gitlab_eks_setup
+  script:
+    - echo "🔍 Checking Flux Kustomization and HelmRelease in $EKS_CLUSTER_NAME..."
+    - kubectl get kustomization -n flux-system $CI_PROJECT_NAME
+    - kubectl get helmrelease -n $CI_PROJECT_NAME $CI_PROJECT_NAME
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_BRANCH =~ /^feature\/.*$/'

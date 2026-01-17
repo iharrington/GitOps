@@ -1,0 +1,142 @@
+# .sast-scans.yml
+# Reusable SAST job definitions
+
+# ==========================
+# Base SAST Template
+# ==========================
+
+.sast_base:
+  stage: sast
+  tags:
+    - AMS-API-SECURITY-RUNNER-1
+  allow_failure: true
+  variables:
+    SAST_REPORT: gl-sast-report.json
+  artifacts:
+    paths:
+      - "$SAST_REPORT"
+    reports:
+      sast: "$SAST_REPORT"
+  script:
+    - echo "🔎 Running SAST analyzer for $SAST_TOOL..."
+    - /analyzer run --excluded-paths "**/*dev.sln,**/*Dev.sln,**/*rnd.sln,**/*RND.sln,**/*test.sln,**/*Test.sln"
+
+# ---------------------------
+# .NET Static Application Security Testing (SAST)
+# ---------------------------
+
+.dotnet_before_script: &dotnet_before_script
+  - |
+    # Register internal NuGet feed directly
+    dotnet nuget remove source "frc-package-registry" || true
+    dotnet nuget add source "${CI_API_V4_URL}/groups/333/-/packages/nuget/index.json" \
+      --name "frc-package-registry" \
+      --username gitlab-ci-token \
+      --password "$CI_JOB_TOKEN" \
+      --store-password-in-clear-text
+  - dotnet restore "${SOLUTION_PATH:-.}"
+
+.dotnet_light_sast:
+  extends:
+    - .sast_base
+  image:
+    name: $ECR_ROOT/devops/dotnet-sast:2.0.0
+    entrypoint: [""]
+  before_script: *dotnet_before_script
+  variables:
+    SAST_TOOL: DotNet
+    SEARCH_MAX_DEPTH: 3
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - "**/*.cs"
+        - "**/*.csproj"
+        - "**/*.sln"
+      when: always
+    - when: never
+
+.dotnet_full_sast:
+  extends:
+    - .sast_base
+  image:
+    name: $ECR_ROOT/devops/dotnet-sast:2.0.0
+    entrypoint: [""]
+  before_script: *dotnet_before_script
+  variables:
+    SAST_TOOL: DotNet
+    SEARCH_MAX_DEPTH: 5
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: always
+    - when: never
+
+# ---------------------------
+# Node.js Static Application Security Testing (SAST)
+# ---------------------------
+
+.nodejs_light_sast:
+  extends: .sast_base
+  image:
+    name: $ECR_ROOT/mirrors/gitlab-org/security-products/analyzers/nodejs-scan:4.1.13
+    entrypoint: [""]
+  variables:
+    SAST_TOOL: NodeJS
+    SEARCH_MAX_DEPTH: 3
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - "**/*.js"
+        - "**/*.jsx"
+        - "**/*.ts"
+        - "**/*.tsx"
+        - "**/*.cjs"
+        - "**/*.mjs"
+      when: always
+    - when: never
+
+.nodejs_full_sast:
+  extends: .sast_base
+  image:
+    name: $ECR_ROOT/mirrors/gitlab-org/security-products/analyzers/nodejs-scan:4.1.13
+    entrypoint: [""]
+  variables:
+    SAST_TOOL: NodeJS
+    SEARCH_MAX_DEPTH: 5
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: always
+    - when: never
+
+# ---------------------------
+# Semgrep/Generic Static Application Security Testing (SAST)
+# ---------------------------
+
+.semgrep_sast:
+  extends: .sast_base
+  image:
+    name: $ECR_ROOT/mirrors/security-products/semgrep:6.9.0
+    entrypoint: [""]
+  variables:
+    SAST_TOOL: Semgrep
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: always
+    - when: never
+# ---------------------------
+# Python Static Application Security Testing (SAST)
+# ---------------------------
+
+# .python_light_sast:
+#   extends: .sast_base
+#   image:
+#     name: $ECR_ROOT/mirrors/security-products/python-scan:1.2.0
+#     entrypoint: [""]
+#   variables:
+#     SAST_TOOL: Python
+#   rules:
+#     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+#       changes:
+#         - "**/*.py"
+#       when: always
+#     - when: never
+#   allow_failure: true

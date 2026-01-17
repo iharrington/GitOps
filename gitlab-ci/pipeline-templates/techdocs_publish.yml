@@ -1,0 +1,18 @@
+# techdocs_publish.yml
+# include: "aws_auth.yml" #// TODO: figure oput how to get inheritance working in GitLab CI
+
+.techdocs_publish:
+  extends: .aws_auth_setup
+  stage: publish
+  variables:
+    AWS_DEFAULT_REGION: "us-west-1"
+    TECHDOCS_S3_BUCKET: "backstage-docs-storage"
+  script:
+    - echo "Generating TechDocs site from ./docs..."
+    - yarn dlx @techdocs/cli generate --source-dir ./ --output-dir ./techdocs-out
+    - echo "TechDocs S3 bucket = ${TECHDOCS_S3_BUCKET}"
+    - test -d "techdocs-out" || (echo "techdocs-out directory not found" && exit 1)
+    - aws s3 sync techdocs-out/ s3://$TECHDOCS_S3_BUCKET --delete
+    - echo "✅ TechDocs uploaded successfully to $TECHDOCS_S3_BUCKET"
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

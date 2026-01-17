@@ -1,0 +1,7 @@
+site_name: "Jena-Fuseki Documentation"
+repo_url: https://gitlab.com/platform/data/jena-fuseki
+nav:
+  - Home: index.md
+  - Guides:
+      - Jena-Fuseki EKS User Guide: jena-eks-user-guide.md
+  - Architecture: architecture.md

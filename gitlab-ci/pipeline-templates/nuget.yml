@@ -1,0 +1,103 @@
+# nuget.yml
+# -----------------------
+# NuGet build & deploy pipeline template
+# -----------------------
+
+.nuget_setup:
+  image: $ECR_ROOT/mirrors/dotnet/sdk:8.0-alpine-amd64
+  before_script:
+    - |
+      # Compute TAG (use pipeline variable if supplied)
+      if [ -n "$TAG" ]; then
+        echo "Using provided TAG: $TAG"
+      else
+        echo "No TAG provided. Determining next patch version..."
+
+        git fetch --tags
+        LATEST_TAG=$(git tag -l | sort -V | tail -n 1)
+
+        if [ -z "$LATEST_TAG" ]; then
+          LATEST_TAG="0.0.0"
+        fi
+
+        echo "Latest tag: $LATEST_TAG"
+
+        MAJOR=$(echo "$LATEST_TAG" | cut -d. -f1)
+        MINOR=$(echo "$LATEST_TAG" | cut -d. -f2)
+        PATCH=$(echo "$LATEST_TAG" | cut -d. -f3)
+
+        PATCH=$((PATCH + 1))
+        TAG="${MAJOR}.${MINOR}.${PATCH}"
+
+        echo "Generated TAG: $TAG"
+      fi
+
+    - git config user.name "${CI_GITLAB_USER_NAME:-GitLab CI}"
+    - git config user.email "${CI_GITLAB_USER_EMAIL:-ci@gmail.com}"
+    - git remote set-url origin "https://gitlab-ci-token:${GITLAB_TAG_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+
+    - |
+      # Register internal NuGet feed directly
+      dotnet nuget remove source "frc-package-registry" || true
+      dotnet nuget add source "${CI_API_V4_URL}/groups/333/-/packages/nuget/index.json" \
+        --name "frc-package-registry" \
+        --username gitlab-ci-token \
+        --password "$CI_JOB_TOKEN" \
+        --store-password-in-clear-text
+
+.validate_package:
+  extends: .nuget_setup
+  image: $ECR_ROOT/mirrors/dotnet/sdk:8.0-alpine-amd64
+  stage: validate
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - if: '$CI_COMMIT_BRANCH && $CI_COMMIT_BRANCH != "main" && $CI_PIPELINE_SOURCE == "push"'
+      when: always
+    - when: never
+  script:
+    - echo "Restoring and building NuGet package for validation..."
+    - dotnet restore "$PROJECT_PATH"
+    - dotnet build "$PROJECT_PATH" --configuration Release
+    - dotnet pack "$PROJECT_PATH" --configuration Release -p:Version="$TAG" --no-build --output "$(dirname "$PROJECT_PATH")/bin/Release"
+    - ls -l "$(dirname "$PROJECT_PATH")/bin/Release"
+    - echo "NuGet package validation complete."
+
+.unit_tests:
+  extends: .nuget_setup
+  image: $ECR_ROOT/mirrors/dotnet/sdk:8.0-alpine-amd64
+  stage: test
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: always
+    - when: never
+  script:
+    - echo "Running unit tests on $SOLUTION_PATH..."
+    - dotnet build "$SOLUTION_PATH" --configuration Release
+    - dotnet test "$SOLUTION_PATH" --configuration Release --no-build --logger "trx;LogFileName=test_results.trx"
+  artifacts:
+    when: always
+    paths:
+      - "**/TestResults/*.trx"
+
+.build_and_push:
+  extends: .nuget_setup
+  image: $ECR_ROOT/mirrors/dotnet/sdk:8.0-alpine-amd64
+  stage: deploy
+  environment: production
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: always
+    - when: never
+  script:
+    - echo "Deploying NuGet package version $TAG"
+    - dotnet restore "$PROJECT_PATH"
+    - dotnet pack "$PROJECT_PATH" -c Release -p:GeneratePackageOnBuild=false -p:Version="$TAG" --output "$(dirname "$PROJECT_PATH")/bin/Release"
+    - |
+      dotnet nuget push "$(dirname "$PROJECT_PATH")/bin/Release/*.nupkg" \
+        --source "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/nuget/index.json" \
+        --api-key "$CI_JOB_TOKEN"
+    - git tag -a "$TAG" -m "Automated tag for version $TAG"
+    - git push -o ci.skip origin "$TAG"

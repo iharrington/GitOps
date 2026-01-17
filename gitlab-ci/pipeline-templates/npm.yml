@@ -1,0 +1,149 @@
+# npm.yml
+# -----------------------
+# NPM build & deploy pipeline template
+# -----------------------
+
+.npm_setup:
+  image: $ECR_ROOT/mirrors/node:22-slim
+  before_script:
+    - |
+      echo "🔧 Installing required tools..."
+      apt-get update -qq
+      apt-get install -y --no-install-recommends git ca-certificates curl jq
+      rm -rf /var/lib/apt/lists/*
+
+    - |
+      # Compute TAG (use pipeline variable if supplied)
+      if [ -n "$TAG" ]; then
+        echo "Using provided TAG: $TAG"
+      else
+        echo "No TAG provided. Determining next patch version..."
+        git fetch --tags
+        LATEST_TAG=$(git describe --tags --abbrev=0 || echo "0.0.0")
+        echo "Latest tag: $LATEST_TAG"
+        MAJOR=$(echo "$LATEST_TAG" | cut -d. -f1)
+        MINOR=$(echo "$LATEST_TAG" | cut -d. -f2)
+        PATCH=$(echo "$LATEST_TAG" | cut -d. -f3)
+        PATCH=$((PATCH + 1))
+        TAG="${MAJOR}.${MINOR}.${PATCH}"
+        echo "Generated TAG: $TAG"
+      fi
+      echo "TAG=$TAG" >> build.env
+
+    - |
+      echo "🔐 Fetching bot user info..."
+      BOT_INFO=$(curl -s --header "PRIVATE-TOKEN: ${GITLAB_TAG_TOKEN}" "${CI_API_V4_URL}/user")
+      BOT_USER=$(echo "$BOT_INFO" | jq -r .username)
+      BOT_EMAIL=$(echo "$BOT_INFO" | jq -r .email)
+      echo "Detected bot user: ${BOT_USER} (${BOT_EMAIL})"
+
+      git config user.name "$BOT_USER"
+      git config user.email "$BOT_EMAIL"
+      git remote set-url origin "https://${BOT_USER}:${GITLAB_TAG_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+
+    - |
+      # Configure NPM for internal GitLab project registry
+      echo "@frc:registry=${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/npm/" > .npmrc
+      echo "//${CI_SERVER_HOST}/api/v4/projects/${CI_PROJECT_ID}/packages/npm/:_authToken=${CI_JOB_TOKEN}" >> .npmrc
+      echo "always-auth=true" >> .npmrc
+      echo "NPM registry configured for project ${CI_PROJECT_ID}."
+
+# -----------------------------
+# Lint job with shared caching
+# -----------------------------
+.lint:
+  stage: lint
+  image: $ECR_ROOT/mirrors/node:22-slim
+  cache:
+    key:
+      files:
+        - package-lock.json
+        - package.json
+    policy: pull-push
+    paths:
+      - node_modules/
+  before_script:
+    - echo "🔧 Setting up lint job..."
+    - npm ci
+  script:
+    - echo "🧹 Running lint..."
+    - npm run lint || echo "No lint script defined — skipping lint step."
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH != "main"'
+      when: on_success
+    - when: never
+
+.test:
+  stage: test
+  image: $ECR_ROOT/mirrors/node:22-slim
+  cache:
+    key:
+      files:
+        - package-lock.json
+        - package.json
+    policy: pull-push
+    paths:
+      - node_modules/
+  before_script:
+    - echo "🔧 Setting up test job..."
+    - npm ci
+  script:
+    - echo "🧪 Running tests..."
+    - npm run test
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - if: "$CI_PIPELINE_SOURCE =~ /merge_request_event|push/"
+      when: on_success
+
+.validate_package:
+  extends: .npm_setup
+  stage: validate
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - if: '$CI_COMMIT_BRANCH && $CI_COMMIT_BRANCH != "main" && $CI_PIPELINE_SOURCE == "push"'
+      when: always
+    - when: never
+  script:
+    - echo "🧪 Validating npm package..."
+    - npm ci
+    - npm run build || echo "No build script defined."
+    - npm pack
+    - ls -l *.tgz
+    - echo "✅ NPM package validation complete."
+
+.build_and_publish:
+  extends: .npm_setup
+  stage: deploy
+  environment: production
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE == "push"'
+      when: always
+    - when: never
+  script:
+    - echo "🚀 Publishing npm package version $TAG"
+
+    # Ensure we’re on the latest main branch (GitLab CI uses detached HEAD)
+    - git fetch origin main
+    - git checkout -B main origin/main
+
+    # Install dependencies and build
+    - npm ci
+    - npm run build || echo "No build script defined."
+
+    # Update package.json version
+    - npm version "$TAG" --no-git-tag-version
+    - git add package.json package-lock.json || true
+    - git commit -m "Bump version to $TAG [ci skip]" || echo "No version changes to commit"
+
+    # Publish to GitLab project-level npm registry
+    - npm publish --registry "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/npm/"
+
+    # Create and push annotated tag with version commit
+    - git tag -a "$TAG" -m "Automated tag for version $TAG [ci skip]"
+    - git push origin main --tags

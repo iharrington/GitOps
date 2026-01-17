@@ -1,0 +1,32 @@
+# Role
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: jena-fuseki
+  name: jena-dba-role
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "services", "persistentvolumeclaims"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["pods/portforward"]
+    verbs: ["create"]
+
+---
+# RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  namespace: jena-fuseki
+  name: jena-dba-binding
+subjects:
+  - kind: Group
+    name: jena-dba
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: jena-dba-role
+  apiGroup: rbac.authorization.k8s.io

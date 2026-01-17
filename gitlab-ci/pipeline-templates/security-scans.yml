@@ -1,0 +1,131 @@
+# security-scans.yml
+# Reusable security job definitions
+
+# -----------------------------
+# MERGE REQUEST SCANS
+# -----------------------------
+
+.secret_detection:
+  tags: [AMS-API-SECURITY-RUNNER-1]
+  image:
+    name: $ECR_ROOT/mirrors/zricethezav/gitleaks:8.28.0
+    entrypoint: [""]
+  script:
+    - echo "🔐 Running secret detection..."
+    - gitleaks detect --source . --report-path gl-secret-detection-report.json || true
+  artifacts:
+    paths: [gl-secret-detection-report.json]
+  allow_failure: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+
+# -----------------------------
+# POST-BUILD SCANS
+# -----------------------------
+
+.container_scanning:
+  tags: [AMS-API-SECURITY-RUNNER-3]
+  variables:
+    CS_IMAGE: $IMAGE_NAME:$IMAGE_TAG
+  image:
+    name: $ECR_ROOT/mirrors/security-products/container-scanning:8.6.0
+    entrypoint: [""]
+  script:
+    - echo "🐳 Scanning container $CS_IMAGE..."
+    - /analyzer run || echo "⚠️ Container scan failed"
+  artifacts:
+    paths: [gl-container-scanning-report.json]
+  allow_failure: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "pipeline"'
+
+# -----------------------------
+# STAGING: DAST
+# -----------------------------
+
+.dast_scan:
+  tags: [AMS-API-SECURITY-RUNNER-4]
+  image:
+    name: $ECR_ROOT/mirrors/gitlab-org/security-products/analyzers/dast:3.0.25
+    entrypoint: [""]
+  variables:
+    DAST_SKIP_TARGET_CHECK: "true" #// TODO: remove once we have a valid URL
+  script:
+    - echo "🌐 Running DAST scan against ${DAST_TARGET_URL:-http://default-url.local}"
+    - /analyze -t $DAST_TARGET_URL
+  allow_failure: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+
+# -----------------------------
+# PREPROD: IaC / Compliance (Terraform only)
+# -----------------------------
+
+.iac_compliance_scan:
+  tags: [AMS-API-SECURITY-RUNNER-2]
+  image:
+    name: $ECR_ROOT/mirrors/bridgecrew/checkov:3.2.477
+    entrypoint: [""]
+  script:
+    - echo "📋 Running IaC compliance scan..."
+    - checkov -d . --output-file-path gl-iac-report.json || true
+  artifacts:
+    paths: [gl-iac-report.json]
+  allow_failure: true
+  rules:
+    - exists:
+        - "*.tf"
+        - "**/*.tf"
+      if: '$CI_COMMIT_BRANCH && $CI_COMMIT_BRANCH != "main"'
+
+# -----------------------------
+# NIGHTLY SCHEDULED SCANS
+# -----------------------------
+
+.secret_detection_nightly:
+  tags: [AMS-API-SECURITY-RUNNER-1]
+  image:
+    name: $ECR_ROOT/mirrors/zricethezav/gitleaks:8.28.0
+    entrypoint: [""]
+  script:
+    - echo "🕛 Nightly secret detection..."
+    - gitleaks detect --source . --report-path gl-secret-detection-report.json || true
+  artifacts:
+    paths: [gl-secret-detection-report.json]
+  allow_failure: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+
+.dast_full:
+  tags: [AMS-API-SECURITY-RUNNER-4]
+  image:
+    name: $ECR_ROOT/mirrors/gitlab-org/security-products/analyzers/dast:3.0.25
+    entrypoint: [""]
+  script:
+    - echo "🕛 Running full DAST scan against ${DAST_TARGET_URL:-http://default-url.local}"
+    - /analyze -j --full-scan true -t $DAST_TARGET_URL
+  artifacts:
+    reports:
+      dast: gl-dast-report.json
+    paths:
+      - gl-dast-report.json
+  allow_failure: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+
+# -----------------------------
+# PROD RUNTIME
+# -----------------------------
+
+.runtime_detection:
+  tags: [AMS-API-SECURITY-RUNNER-4]
+  image:
+    name: $ECR_ROOT/mirrors/falcosecurity/falco:0.41.3
+    entrypoint: [""]
+  script:
+    - echo "🛡️ Monitoring runtime with Falco..."
+    - falco || true
+  allow_failure: true
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'

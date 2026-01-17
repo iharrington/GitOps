@@ -1,0 +1,7 @@
+include:
+  - project: "devops/gitlab-ci/pipeline-templates"
+    file: "yaml_check.yml"
+    ref: main
+
+yaml-syntax-check:
+  extends: .yaml-check

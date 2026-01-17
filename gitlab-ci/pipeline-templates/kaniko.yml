@@ -1,0 +1,164 @@
+# ==========================================
+# Global Defaults
+# ==========================================
+variables:
+  IMAGE_DIR_BASE: "."
+  ECR_REPOSITORY_PREFIX: ""
+  IMAGE_TAG_OVERRIDE: ""
+  DEFAULT_DOCKER_VARS: >
+    --build-arg CI_JOB_TOKEN=${CI_JOB_TOKEN}
+
+# ==========================================
+# Precheck (repo + base version logic)
+# ==========================================
+.precheck:
+  image: $ECR_ROOT/devops/golden_runner:1.2.0
+  stage: precheck
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+      when: always
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: always
+    - when: never
+  script: |
+    set -euox pipefail
+
+    if [ -z "${ECR_REPOSITORY_PREFIX:-}" ]; then
+      echo "❌ ERROR: ECR_REPOSITORY_PREFIX is not set."
+      exit 1
+    fi
+    PREFIX="${ECR_REPOSITORY_PREFIX%/}"
+
+    IMAGE_NAME="${IMAGE_NAME:-${CI_PROJECT_NAME,,}}"
+    REPO_NAME="${PREFIX}/${IMAGE_NAME}"
+
+    echo "🔍 Checking ECR repository: $REPO_NAME"
+
+    if ! aws ecr describe-repositories --repository-names "$REPO_NAME" >/dev/null 2>&1; then
+      echo "📂 Repository $REPO_NAME does not exist, creating..."
+      aws ecr create-repository \
+        --repository-name "$REPO_NAME" \
+        --tags Key=auto-generated,Value=true
+    fi
+
+    aws ecr put-image-tag-mutability \
+      --repository-name "$REPO_NAME" \
+      --image-tag-mutability IMMUTABLE_WITH_EXCLUSION \
+      --image-tag-mutability-exclusion-filters '[{"filterType":"WILDCARD","filter":"latest"}]'
+
+    TARGET_BRANCH="${CI_MERGE_REQUEST_TARGET_BRANCH_NAME:-$CI_COMMIT_BRANCH}"
+
+    latest_tag=$(aws ecr describe-images \
+      --repository-name "$REPO_NAME" \
+      --query 'imageDetails[].imageTags[]' \
+      --output json 2>/dev/null |
+      jq -r '.[]' |
+      awk '/^[0-9]+\.[0-9]+\.[0-9]+$/' |
+      sort -V |
+      tail -n1
+    )
+
+    if [ -z "$latest_tag" ]; then
+      latest_tag="1.0.0"
+    fi
+
+    if [[ "$CI_PIPELINE_SOURCE" == "push" && "$TARGET_BRANCH" == "main" ]]; then
+      echo "📦 Main branch push detected: calculating next semantic version..."
+
+      if [ -n "${IMAGE_TAG_OVERRIDE:-}" ]; then
+        BASE_IMAGE_TAG="$IMAGE_TAG_OVERRIDE"
+      else
+        MAJOR=$(echo "$latest_tag" | cut -d. -f1)
+        MINOR=$(echo "$latest_tag" | cut -d. -f2)
+        PATCH=$(echo "$latest_tag" | cut -d. -f3)
+        PATCH=$((PATCH + 1))
+
+        BASE_IMAGE_TAG="${MAJOR}.${MINOR}.${PATCH}"
+      fi
+
+    elif [[ "$CI_PIPELINE_SOURCE" == "merge_request_event" \
+        && "${CI_MERGE_REQUEST_TARGET_BRANCH_NAME:-}" == "main" ]]; then
+      echo "🔀 MR targeting main: using latest version as base (no bump)"
+      BASE_IMAGE_TAG="$latest_tag"
+
+    else
+      echo "ℹ️ No versioning required for this pipeline type"
+      exit 0
+    fi
+
+    echo "✅ Base image version: $BASE_IMAGE_TAG"
+    echo "IMAGE_TAG=$BASE_IMAGE_TAG" > build.env
+
+  artifacts:
+    reports:
+      dotenv: build.env
+    expire_in: 30m
+
+# ==========================================
+# Build & Push (Kaniko)
+# ==========================================
+.build-and-push:
+  image:
+    name: $ECR_ROOT/mirrors/kaniko:1.24.0
+    entrypoint: [""]
+  stage: build
+  needs: ["precheck"]
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE == "push"'
+      when: always
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"'
+      when: always
+    - when: never
+  script: |
+    set -euox pipefail
+
+    if [ -s build.env ]; then
+      . build.env || { echo "❌ Failed to source build.env"; exit 1; }
+    fi
+
+    IMAGE_DIR="${IMAGE_DIR_BASE:-.}"
+    PREFIX="${ECR_REPOSITORY_PREFIX%/}"
+
+    if [ -z "${IMAGE_NAME:-}" ]; then
+      IMAGE_NAME=$(printf '%s' "$CI_PROJECT_NAME" | tr '[:upper:]' '[:lower:]')
+    else
+      IMAGE_NAME=$(printf '%s' "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+    fi
+
+    REPO_NAME="${PREFIX}/${IMAGE_NAME}"
+
+    if [ ! -f "$IMAGE_DIR/Dockerfile" ]; then
+      echo "❌ ERROR: Dockerfile not found in $IMAGE_DIR"
+      exit 1
+    fi
+
+    FINAL_IMAGE_TAG="$IMAGE_TAG"
+
+    if [[ "$CI_PIPELINE_SOURCE" == "merge_request_event" \
+      && "${CI_MERGE_REQUEST_TARGET_BRANCH_NAME:-}" == "main" ]]; then
+      FINAL_IMAGE_TAG="${IMAGE_TAG}-${CI_COMMIT_SHORT_SHA}"
+    fi
+
+    KANIKO_ARGS="${DOCKER_VARS:-$DEFAULT_DOCKER_VARS} \
+      --build-arg VERSION=${FINAL_IMAGE_TAG}"
+
+    if [[ "$CI_PIPELINE_SOURCE" == "push" \
+      && "${CI_COMMIT_BRANCH:-}" == "main" ]]; then
+
+      /kaniko/executor \
+        --context "$CI_PROJECT_DIR" \
+        --dockerfile "$IMAGE_DIR/Dockerfile" \
+        --destination "$ECR_ROOT/$REPO_NAME:$FINAL_IMAGE_TAG" \
+        --destination "$ECR_ROOT/$REPO_NAME:latest" \
+        $KANIKO_ARGS
+
+    elif [[ "$CI_PIPELINE_SOURCE" == "merge_request_event" \
+        && "${CI_MERGE_REQUEST_TARGET_BRANCH_NAME:-}" == "main" ]]; then
+
+      /kaniko/executor \
+        --context "$CI_PROJECT_DIR" \
+        --dockerfile "$IMAGE_DIR/Dockerfile" \
+        --destination "$ECR_ROOT/$REPO_NAME:$FINAL_IMAGE_TAG" \
+        --destination "$ECR_ROOT/$REPO_NAME:latest" \
+        $KANIKO_ARGS
+    fi

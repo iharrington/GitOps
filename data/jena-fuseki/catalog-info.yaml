@@ -1,0 +1,56 @@
+# -----------------------------
+# Deployment Component
+# -----------------------------
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: jena-fuseki-eks
+  title: Jena-Fuseki EKS
+  description: "Apache Jena Fuseki (SPARQL server / RDF triple store) deployed on EKS via Flux and Helm"
+  annotations:
+    backstage.io/techdocs-ref: dir:.
+    gitlab.com/project-slug: devops/tooling/jena-fuseki
+  tags:
+    - jena-fuseki
+    - eks
+    - rdf
+    - sparql
+    - database
+spec:
+  type: service
+  lifecycle: production
+  owner: devops
+  domain: data-platform
+  system: semantic-data
+  relations:
+    - type: documents
+      target: component:jena-fuseki-docs
+
+---
+# -----------------------------
+# Documentation Component
+# -----------------------------
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: jena-fuseki-docs
+  title: Jena-Fuseki Docs
+  description: "Documentation for accessing and working with Jena-Fuseki on EKS"
+  annotations:
+    backstage.io/techdocs-ref: dir:.
+    gitlab.com/project-slug: devops/tooling/jena-fuseki
+  tags:
+    - jena-fuseki
+    - eks
+    - rdf
+    - sparql
+    - documentation
+spec:
+  type: documentation
+  lifecycle: experimental
+  owner: devops
+  domain: data-platform
+  system: semantic-data
+  relations:
+    - type: documents
+      target: component:jena-fuseki-eks

@@ -1,0 +1,28 @@
+deployment:
+  replicaCount: 1
+image:
+  repository: 123456789011.dkr.ecr.us-west-1.amazonaws.com/jena-fuseki
+  tag: 1.0.1
+  pullPolicy: IfNotPresent
+service:
+  type: ClusterIP
+  port: 3030
+ingressHostName: jena-fuseki.dev.example.com
+istio:
+  enabled: true
+resources:
+  requests:
+    cpu: 250m
+    memory: 256Mi
+  limits:
+    cpu: 1
+    memory: 2Gi
+persistence:
+  size: 10Gi
+  accessMode: ReadWriteOnce
+  storageClass: gp3
+  annotations:
+    helm.sh/resource-policy: keep
+shiro:
+  sslEnabled: true
+  secretName: jena-fuseki-secrets

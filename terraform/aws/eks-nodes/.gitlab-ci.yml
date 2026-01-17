@@ -1,0 +1,42 @@
+stages:
+  - plan
+  - apply
+
+include:
+  - project: "devops/gitlab-ci/pipeline-templates"
+    file: "aws_auth.yml"
+    ref: main
+
+.plan:
+  extends: .aws_auth_setup
+  when: always
+  stage: plan
+  script:
+    - set -euxo pipefail
+    - cd ${CI_PROJECT_DIR}/terraform
+    - terraform init
+    - terraform validate
+    - terraform fmt -check
+    - terraform plan
+
+.apply:
+  extends: .aws_auth_setup
+  when: manual
+  allow_failure: true
+  stage: apply
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "master"'
+      when: manual
+  script:
+    - set -euxo pipefail
+    - cd ${CI_PROJECT_DIR}/terraform
+    - terraform init
+    - terraform apply -auto-approve
+
+plan:tf:
+  extends: .plan
+
+apply:tf:
+  extends: .apply
+  dependencies:
+    - plan:tf

@@ -1,0 +1,98 @@
+# helm.yml
+# -----------------------
+# Workflow rules
+# -----------------------
+workflow:
+  rules:
+    # Always run on main
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: always
+
+    # Run on merge requests only if Helm chart or Dockerfile changed
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - "${CHART_DIR_BASE:-.}/**/*"
+      when: always
+
+    # Run on other branches only if Helm chart or Dockerfile changed
+    - changes:
+        - "${CHART_DIR_BASE:-.}/**/*"
+      when: always
+
+    - when: never
+
+# -----------------------
+# Precheck stage
+# -----------------------
+.precheck-helm:
+  image: $ECR_ROOT/devops/golden_runner:1.1.1
+  stage: precheck
+  variables:
+    CHART_NAME: $CI_PROJECT_NAME
+    CHART_VERSION: "0.1.0"
+    CHART_DIR_BASE: .
+  script:
+    - |
+      set -euox pipefail
+
+      REPO_NAME="helm/$CHART_NAME"
+      SKIP_PUSH=0
+
+      echo "🔍 Checking Helm repository: $REPO_NAME in $ECR_ROOT"
+
+      # create repo if it does not exist
+      if ! aws ecr describe-repositories --repository-names "$REPO_NAME" >/dev/null 2>&1; then
+        echo "📂 Repository $REPO_NAME does not exist, creating..."
+        aws ecr create-repository \
+          --repository-name "$REPO_NAME" \
+          --tags Key=auto-generated,Value=true
+      fi
+
+      echo "🔍 Checking if chart version $CHART_VERSION exists using `helm pull`"
+      if helm pull "oci://$ECR_ROOT/$REPO_NAME" --version "$CHART_VERSION" >/dev/null 2>&1; then
+        echo "⏭️ Chart version $CHART_VERSION already exists. Will package only, no push."
+        SKIP_PUSH=1
+      fi
+
+      # write artifact for build stage
+      echo "SKIP_PUSH=$SKIP_PUSH" > skip_build.env
+  artifacts:
+    reports:
+      dotenv: skip_build.env
+    expire_in: 30m
+  allow_failure: false
+
+# -----------------------
+# Build and push stage
+# -----------------------
+.build-and-push-helm:
+  image: $ECR_ROOT/devops/golden_runner:1.1.1
+  stage: build
+  variables:
+    CHART_NAME: $CI_PROJECT_NAME
+    CHART_VERSION: "0.1.0"
+    CHART_DIR_BASE: .
+  script:
+    - |
+      set -euox pipefail
+      CHART_DIR="${CHART_DIR:-helm}"
+      CHART_NAME="$(basename "$CI_PROJECT_DIR")"
+      REPO_NAME="helm/$CHART_NAME"
+      IMAGE_TAG="${CI_COMMIT_REF_NAME:-latest}"
+      BRANCH_NAME="${CI_COMMIT_BRANCH:-$CI_COMMIT_REF_NAME}"
+
+      if [[ ! -f "$CHART_DIR/Chart.yaml" ]]; then
+        echo "❌ ERROR: Chart.yaml not found in $CHART_DIR"
+        exit 1
+      fi
+
+      echo "🔨 Packaging Helm chart $CHART_NAME version $CHART_VERSION"
+      helm package "$CHART_DIR"
+
+      if [[ "$BRANCH_NAME" == "main" && "${SKIP_PUSH:-0}" == "0" ]]; then
+        echo "🚀 Pushing chart"
+        helm push "$CHART_NAME-$CHART_VERSION.tgz" "oci://$ECR_ROOT/helm"
+      else
+        echo "⏭️ Skipping push (non-main branch or version exists)"
+      fi
+  needs: ["precheck-helm"]

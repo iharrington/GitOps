@@ -1,0 +1,41 @@
+{{- if .Values.istio.enabled }}
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: {{ include "jena-fuseki.fullname" . }}-gateway
+  labels:
+    {{- include "jena-fuseki.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: replace
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - {{ .Values.ingressHostName }}
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: {{ include "jena-fuseki.fullname" . }}-vs
+  labels:
+    {{- include "jena-fuseki.labels" . | nindent 4 }}
+spec:
+  hosts:
+    - {{ .Values.ingressHostName }}
+  gateways:
+    - {{ .Release.Namespace }}/{{ include "jena-fuseki.fullname" . }}-gateway
+  http:
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: {{ include "jena-fuseki.fullname" . }}
+            port:
+              number: {{ .Values.service.port }}
+{{- end }}

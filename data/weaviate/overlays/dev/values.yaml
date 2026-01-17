@@ -1,0 +1,21 @@
+weaviate:
+  resources:
+    requests:
+      cpu: 4
+      memory: 16Gi
+    limits:
+      cpu: 8
+      memory: 64Gi
+      nvidia.com/gpu: 1
+  storage:
+    size: 100Gi
+    storageClassName: gp3
+  nodeSelector:
+    nvidia.com/gpu.present: true
+  tolerations:
+    - key: nvidia.com/gpu.present
+      operator: Exists
+      effect: NoSchedule
+  authentication:
+    anonymous_access:
+      enabled: true

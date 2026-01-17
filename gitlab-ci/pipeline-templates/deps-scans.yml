@@ -1,0 +1,95 @@
+# ============================================
+# .dependency-scans.yml
+# Unified reusable Dependency Scanning jobs
+# ============================================
+
+.default_rules:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: always
+    - when: never
+
+.dependency_scan_base:
+  stage: dependency_scanning
+  tags:
+    - AMS-API-SECURITY-RUNNER-3
+  allow_failure: true
+  artifacts:
+    when: always
+    paths:
+      - "**/gl-dependency-scanning-report.json"
+      - "**/gl-sbom-*.cdx.json"
+    reports:
+      dependency_scanning: gl-dependency-scanning-report.json
+  script:
+    - echo "🔎 Running $SCAN_TOOL dependency scan..."
+    - /analyzer run
+
+# ---------------------------
+# .NET Dependency Scan
+# ---------------------------
+
+.dotnet_dependency_prepare:
+  stage: dependency_scanning
+  extends:
+    - .default_rules
+  image: $ECR_ROOT/mirrors/dotnet/sdk:8.0-alpine-amd64
+  before_script:
+    - |
+      # Register internal NuGet feed directly
+      dotnet nuget remove source "frc-package-registry" || true
+      dotnet nuget add source "${CI_API_V4_URL}/groups/333/-/packages/nuget/index.json" \
+        --name "frc-package-registry" \
+        --username gitlab-ci-token \
+        --password "$CI_JOB_TOKEN" \
+        --store-password-in-clear-text
+  script:
+    - echo "📦 Restoring .NET dependencies..."
+    - dotnet restore "${SOLUTION_PATH:-.}" --use-lock-file
+  artifacts:
+    paths:
+      - "**/packages.lock.json"
+
+.dotnet_dependency_scan:
+  extends:
+    - .default_rules
+    - .dependency_scan_base
+  image:
+    name: $ECR_ROOT/mirrors/gitlab-org/security-products/analyzers/dependency-scanning:1.0.5
+    entrypoint: [""]
+  variables:
+    SCAN_TOOL: DotNet
+    DS_MAX_DEPTH: 5
+  needs:
+    - job: dependency_scan_prepare
+      artifacts: true
+
+# ---------------------------
+# Node.js Dependency Scan
+# ---------------------------
+.nodejs_dependency_prepare:
+  extends:
+    - .default_rules
+  stage: dependency_scanning
+  image: $ECR_ROOT/mirrors/node:22-slim
+  script:
+    - echo "📦 Preparing npm v2-compatible lockfile for Gemnasium..."
+    - rm -rf node_modules package-lock.json
+    - npm install --ignore-scripts --package-lock-only --lockfile-version 2
+  artifacts:
+    paths:
+      - package-lock.json
+
+.nodejs_dependency_scan:
+  extends:
+    - .default_rules
+    - .dependency_scan_base
+  image:
+    name: $ECR_ROOT/mirrors/gitlab-org/security-products/analyzers/gemnasium:2.38.0
+    entrypoint: [""]
+  variables:
+    SCAN_TOOL: NodeJS
+    DS_MAX_DEPTH: 5
+  needs:
+    - job: dependency_scan_prepare
+      artifacts: true

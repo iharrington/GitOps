@@ -1,0 +1,109 @@
+# =============================================================================
+# macOS
+# =============================================================================
+.DS_Store
+
+# =============================================================================
+# Windows / WSL / Visual Studio
+# =============================================================================
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+*:Zone.Identifier
+
+# User-specific files
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.pidb
+*.svclog
+*.pdb
+
+# Auto-generated / build files
+*.aps
+*.ncb
+*.opendb
+*.opensdf
+*.cache
+*.ilk
+*.meta
+*.obj
+*.iobj
+*.pch
+*.ipch
+*.rsp
+*.sbr
+*.tlb
+*.tli
+*.tlh
+*.tmp
+*.tmp_proj
+*.log
+*.vspscc
+*.vssscc
+
+# Visual Studio folders
+.vs/
+_ReSharper*/
+*.DotSettings.user
+
+# =============================================================================
+# .NET / ASP.NET / Entity Framework
+# =============================================================================
+# Build results
+bin/
+obj/
+out/
+
+# Publish output
+publish/
+
+# NuGet packages
+*.nupkg
+*.snupkg
+packages/
+.nuget/
+project.lock.json
+project.fragment.lock.json
+
+# EF Core migrations snapshot (optional)
+Migrations/
+
+# Logs
+logs/
+*.log
+
+# Test Results
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+
+# =============================================================================
+# Environment / Config
+# =============================================================================
+.env
+.env.test
+*.local.json
+appsettings.*.json
+secrets.json
+secrets.*.json
+
+# =============================================================================
+# Temporary / Swap / Backup files
+# =============================================================================
+*.swp
+*.tmp
+*.bak
+*.backup
+*.old
+*.orig
+
+# =============================================================================
+# IDE / Editor
+# =============================================================================
+.idea/
+*.sln.iml

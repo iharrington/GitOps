@@ -1,0 +1,54 @@
+# helm.yml
+# -----------------------
+# Check YAML syntax
+# -----------------------
+
+.yaml-check:
+  stage: test
+  image: $ECR_ROOT/mirrors/python:3.12-slim
+  variables:
+    YAML_CHECK_SCRIPT: |
+      import sys
+      import yaml
+      from pathlib import Path
+      
+      def check_yaml_file(file_path):
+          """Check if a YAML file has valid syntax."""
+          try:
+              with open(file_path, 'r', encoding='utf-8') as f:
+                  yaml.safe_load(f)
+              return True, None
+          except yaml.YAMLError as e:
+              return False, f"YAML syntax error: {e}"
+          except Exception as e:
+              return False, f"File error: {e}"
+      
+      def main():
+          yaml_files = list(Path('.').rglob('*.yaml')) + list(Path('.').rglob('*.yml'))
+          
+          if not yaml_files:
+              print("ℹ️  No YAML files found")
+              return 0
+          
+          print(f"🔍 Checking {len(yaml_files)} YAML file(s)...")
+          
+          errors = []
+          for file_path in sorted(yaml_files):
+              print(f"  • {file_path}")
+              is_valid, error_msg = check_yaml_file(file_path)
+              if not is_valid:
+                  errors.append(f"❌ {file_path}: {error_msg}")
+          
+          if errors:
+              print("\n".join(errors))
+              return 1
+          
+          print("✅ All YAML files are valid")
+          return 0
+      
+      if __name__ == "__main__":
+          sys.exit(main())
+  before_script:
+    - pip install --quiet pyyaml
+  script:
+    - python -c "$YAML_CHECK_SCRIPT"

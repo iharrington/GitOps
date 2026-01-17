@@ -1,0 +1,55 @@
+# -----------------------------
+# Deployment Component
+# -----------------------------
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: weaviate-eks
+  title: Weaviate EKS
+  description: "Weaviate vector database deployed on EKS via Flux and Helm"
+  annotations:
+    backstage.io/techdocs-ref: dir:.
+    gitlab.com/project-slug: devops/tooling/weaviate
+  tags:
+    - weaviate
+    - eks
+    - database
+    - vector-db
+spec:
+  type: service
+  lifecycle: production
+  owner: devops
+  domain: data-platform
+  system: vector-db
+  relations:
+    - type: documents
+      target: component:weaviate-docs
+
+---
+# -----------------------------
+# Documentation Component
+# -----------------------------
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: weaviate-docs
+  title: Weaviate Docs
+  description: "Documentation for accessing and working with Weaviate on EKS"
+  annotations:
+    backstage.io/techdocs-ref: dir:.
+    gitlab.com/project-slug: devops/tooling/weaviate
+  tags:
+    - weaviate
+    - eks
+    - database
+    - documentation
+    - vector-db
+spec:
+  type: documentation
+  lifecycle: experimental
+  owner: devops
+  domain: data-platform
+  system: vector-db
+  relations:
+    - type: documents
+      target: component:weaviate-eks
