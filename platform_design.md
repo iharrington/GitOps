@@ -14,7 +14,7 @@ This design was prepared to illustrate how I approach infrastructure design, Kub
 
 ## Problem Statement
 
-The goal was to deploy and operate stateful data services on Kubernetes with the following constraints and objectives:
+The goal was to deploy and operate stateful data services on Kubernetes using Flux with the following constraints and objectives:
 
 - Multiple environments (e.g., dev, staging, prod)
 - Minimal manual intervention after initial setup
@@ -113,7 +113,7 @@ This required building:
 - A **custom Docker image**
 - A **custom Helm chart**
 
-**Why custom was necessary:**
+**What custom image provides:**
 - Control over JVM configuration
 - Explicit handling of data directories and persistence
 - Ability to define health checks correctly
@@ -124,6 +124,7 @@ This required building:
 - Support for persistence via PVCs
 - Configurable resource requests and limits
 - Upgrade-safe templating
+- Easier to extend
 
 This approach required more upfront effort but provided full control and operational clarity.
 
